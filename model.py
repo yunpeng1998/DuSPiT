@@ -16,8 +16,8 @@ import math
 
 def get_2d_sincos_pos_embed_l(H, W, dim, device="cpu"):
     """
-    返回: (H*W, dim)
-    dim 必须是 4 的倍数
+    return: (H*W, dim)
+
     """
     assert dim % 4 == 0, "dim must be divisible by 4"
 
@@ -696,89 +696,4 @@ class FiT(nn.Module):
 
 
 
-
-
-def FiT_B_32(**kwargs):
-    return FiT(depth=6, hidden_size=1024, hidden_size2=4096, num_heads=16,
-               bottleneck_dim=128, in_context_len=32, in_context_start=2, patch_size=32, **kwargs)
-
-
-def FiT_B_64(**kwargs):
-    return FiT(depth=12, hidden_size=1024, hidden_size2=9216, num_heads=16,
-               bottleneck_dim=128, in_context_len=32, in_context_start=4, patch_size=64, **kwargs)
-
-FiT_models = {
-
-    'FiT-B/32': FiT_B_32,
-    'FiT-B/64': FiT_B_64,
-
-}
-
-if __name__ == "__main__":
-
-    import time
-    import torch
-
-    def add_timing_hooks(model):
-
-        timings = {}
-
-        def pre_hook(name):
-            def hook(module, input):
-                if torch.cuda.is_available():
-                    torch.cuda.synchronize()
-                timings[name] = time.time()
-            return hook
-
-        def post_hook(name):
-            def hook(module, input, output):
-                if torch.cuda.is_available():
-                    torch.cuda.synchronize()
-                dt = time.time() - timings[name]
-                print(f"{name:<40} {dt*1000:.2f} ms")
-            return hook
-
-        for name, module in model.named_modules():
-
-            if any(k in name for k in [
-                "blocks",
-                "blocks_2",
-                "attn",
-                "mlp",
-                "final_layer",
-                "x_embedder"
-            ]):
-                module.register_forward_pre_hook(pre_hook(name))
-                module.register_forward_hook(post_hook(name))
-
-
-    import torch
-    # import torch
-    from fvcore.nn import FlopCountAnalysis, flop_count_table
-    from torchprofile import profile_macs
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    #print("using device:", device)
-
-    # model = FiT_B_32(input_size =512).to(device) 
-    model = FiT_B_32(input_size =256).to(device)   
-    # add_timing_hooks(model)
-
-
-
-    inputs = (torch.randn(1, 3, 256, 256, device=device), torch.tensor([0], device=device), torch.tensor([0], device=device, dtype=torch.long))  # (N,) long，给 LabelEmbedder 用)  # 例子：图像分类
-
-
-    with torch.no_grad():
-        macs = profile_macs(model, args=inputs)
-
-    print("MACs:", macs)
-    print("FLOPs(≈2*MACs):", 2 * macs)
-    flops = FlopCountAnalysis(model, inputs)
-    print("Total FLOPs:", flops.total())
-    print(flop_count_table(flops, max_depth=3))
-
-
-    num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Trainable parameters: {num_params:,}")
 
